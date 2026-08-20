@@ -75,6 +75,9 @@
 #ifdef __HAIKU__
     #define OPENRCT2_PLATFORM "Haiku"
 #endif
+#ifdef __SWITCH__
+    #define OPENRCT2_PLATFORM "Nintendo Switch"
+#endif
 #ifndef OPENRCT2_PLATFORM
     #error Unknown platform!
 #endif
