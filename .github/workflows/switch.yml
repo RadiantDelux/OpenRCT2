@@ -15,6 +15,10 @@ on:
       - 'scripts/build-switch.sh'
   workflow_dispatch:
 
+concurrency:
+  group: switch-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-switch:
     runs-on: ubuntu-latest
@@ -33,9 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          dkp-pacman -Syu --noconfirm
           dkp-pacman -S --needed --noconfirm \
-            cmake ninja git make automake autoconf libtool pkgconf \
             switch-pkg-config switch-sdl2 switch-zlib switch-libpng switch-libzstd
 
       - name: Build libzip for Switch
@@ -44,7 +46,7 @@ jobs:
           set -euxo pipefail
           source /opt/devkitpro/switchvars.sh
           git clone --depth 1 --branch v1.11.4 https://github.com/nih-at/libzip.git /tmp/libzip
-          cmake -S /tmp/libzip -B /tmp/libzip-build -G Ninja \
+          cmake -S /tmp/libzip -B /tmp/libzip-build \
             -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/Switch.cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="$PORTLIBS_PREFIX" \
@@ -90,7 +92,7 @@ jobs:
         run: |
           set -euxo pipefail
           source /opt/devkitpro/switchvars.sh
-          cmake -S . -B build-switch -G Ninja \
+          cmake -S . -B build-switch \
             -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/Switch.cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DSTATIC=ON \
