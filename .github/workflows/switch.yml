@@ -67,12 +67,23 @@ jobs:
         shell: bash
         run: |
           set -euxo pipefail
-          source /opt/devkitpro/switchvars.sh
           git clone --depth 1 --branch release-77-1 https://github.com/unicode-org/icu.git /tmp/icu
           mkdir -p /tmp/icu-host /tmp/icu-switch
+
+          # ICU needs native helper binaries before it can be cross-compiled.
           cd /tmp/icu-host
-          /tmp/icu/icu4c/source/runConfigureICU Linux --disable-samples --disable-tests
+          env \
+            CC=/usr/bin/gcc \
+            CXX=/usr/bin/g++ \
+            CPPFLAGS= \
+            CFLAGS= \
+            CXXFLAGS= \
+            LDFLAGS= \
+            /tmp/icu/icu4c/source/runConfigureICU Linux --disable-samples --disable-tests
           make -j2
+
+          source /opt/devkitpro/switchvars.sh
+          cp /tmp/icu/icu4c/source/config/mh-linux /tmp/icu/icu4c/source/config/mh-unknown
           cd /tmp/icu-switch
           /tmp/icu/icu4c/source/configure \
             --host=aarch64-none-elf \
@@ -82,8 +93,11 @@ jobs:
             --disable-samples \
             --disable-tests \
             --with-cross-build=/tmp/icu-host \
+            CPPFLAGS="$CPPFLAGS" \
             CFLAGS="$CFLAGS" \
-            CXXFLAGS="$CXXFLAGS"
+            CXXFLAGS="$CXXFLAGS" \
+            LDFLAGS="$LDFLAGS" \
+            LIBS="$LIBS"
           make -j2
           make install
 
