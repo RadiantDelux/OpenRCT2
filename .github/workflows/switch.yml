@@ -1,0 +1,131 @@
+name: Nintendo Switch
+
+on:
+  push:
+    branches:
+      - switch-port
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - '.github/workflows/switch.yml'
+      - 'cmake/**'
+      - 'src/openrct2/**'
+      - 'src/openrct2-ui/**'
+      - 'scripts/build-switch.sh'
+  workflow_dispatch:
+
+jobs:
+  build-switch:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkita64:latest
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Mark checkout safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install Switch portlibs
+        shell: bash
+        run: |
+          set -euxo pipefail
+          dkp-pacman -Syu --noconfirm
+          dkp-pacman -S --needed --noconfirm \
+            cmake ninja git make automake autoconf libtool pkgconf \
+            switch-pkg-config switch-sdl2 switch-zlib switch-libpng switch-libzstd
+
+      - name: Build libzip for Switch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source /opt/devkitpro/switchvars.sh
+          git clone --depth 1 --branch v1.11.4 https://github.com/nih-at/libzip.git /tmp/libzip
+          cmake -S /tmp/libzip -B /tmp/libzip-build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/Switch.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$PORTLIBS_PREFIX" \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_TOOLS=OFF \
+            -DBUILD_REGRESS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DBUILD_DOC=OFF \
+            -DENABLE_COMMONCRYPTO=OFF \
+            -DENABLE_GNUTLS=OFF \
+            -DENABLE_MBEDTLS=OFF \
+            -DENABLE_OPENSSL=OFF \
+            -DENABLE_WINDOWS_CRYPTO=OFF
+          cmake --build /tmp/libzip-build -j2
+          cmake --install /tmp/libzip-build
+
+      - name: Build ICU for Switch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source /opt/devkitpro/switchvars.sh
+          git clone --depth 1 --branch release-77-1 https://github.com/unicode-org/icu.git /tmp/icu
+          mkdir -p /tmp/icu-host /tmp/icu-switch
+          cd /tmp/icu-host
+          /tmp/icu/icu4c/source/runConfigureICU Linux --disable-samples --disable-tests
+          make -j2
+          cd /tmp/icu-switch
+          /tmp/icu/icu4c/source/configure \
+            --host=aarch64-none-elf \
+            --prefix="$PORTLIBS_PREFIX" \
+            --disable-shared \
+            --enable-static \
+            --disable-samples \
+            --disable-tests \
+            --with-cross-build=/tmp/icu-host \
+            CFLAGS="$CFLAGS" \
+            CXXFLAGS="$CXXFLAGS"
+          make -j2
+          make install
+
+      - name: Configure OpenRCT2
+        shell: bash
+        run: |
+          set -euxo pipefail
+          source /opt/devkitpro/switchvars.sh
+          cmake -S . -B build-switch -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/Switch.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTATIC=ON \
+            -DWITH_TESTS=OFF \
+            -DDISABLE_DISCORD_RPC=ON \
+            -DDISABLE_HTTP=ON \
+            -DDISABLE_NETWORK=ON \
+            -DDISABLE_TTF=ON \
+            -DDISABLE_VERSION_CHECKER=ON \
+            -DDISABLE_FLAC=ON \
+            -DDISABLE_VORBIS=ON \
+            -DDISABLE_OPENGL=ON \
+            -DENABLE_SCRIPTING=OFF \
+            -DDOWNLOAD_TITLE_SEQUENCES=OFF \
+            -DDOWNLOAD_OBJECTS=OFF \
+            -DDOWNLOAD_OPENSFX=OFF \
+            -DDOWNLOAD_OPENMUSIC=OFF \
+            -DOPENRCT2_USE_CCACHE=OFF
+
+      - name: Build OpenRCT2
+        shell: bash
+        run: cmake --build build-switch --target openrct2 -j2
+
+      - name: Package NRO
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p dist/switch/openrct2
+          nacptool --create 'OpenRCT2' 'OpenRCT2 contributors' '0.5.4-switch' build-switch/openrct2.nacp
+          elf2nro build-switch/openrct2 dist/switch/openrct2/openrct2.nro --nacp=build-switch/openrct2.nacp
+          cp -R data dist/switch/openrct2/openrct2-data
+          cp docs/SWITCH_PORT.md dist/switch/openrct2/README-SWITCH.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openrct2-switch
+          path: dist/switch
+          if-no-files-found: error
